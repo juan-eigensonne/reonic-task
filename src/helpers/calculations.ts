@@ -2,6 +2,7 @@ import {
     arrivalProbabilityForTime,
     chargePoint,
     chargingDistanceProbabilities,
+    TickResponse,
 } from 'reonic';
 
 const probabilities: arrivalProbabilityForTime[] = [
@@ -43,13 +44,16 @@ const chargeNeededProbabilities: chargingDistanceProbabilities[] = [
     { rangeStart: 0.9703, rangeEnd: 0.9997, distanceNeeded: 300 },
 ];
 
-const tickInterval = 600;
 const secondsInHour = 3600;
 
 // Standard EV, 18kWh per 100km, 0.18kWh/km
 const kwhPerKm = 0.18;
 
-export function runTick(chargePoints: chargePoint[], time: number) {
+export function runTick(
+    chargePoints: chargePoint[],
+    time: number,
+    tickInterval: number,
+) {
     let consumedEnergyInTick = 0;
     let powerDemanded = 0;
 
@@ -152,4 +156,40 @@ function getEndChargingTime(startTime: number, timeNeeded: number) {
         return startTime + timeNeeded - 24 * secondsInHour;
     }
     return startTime + timeNeeded;
+}
+
+export function dayRun(tickLength: number, chargePoints: chargePoint[]) {
+    let usableChargePointsData = chargePoints;
+    let timeStart = 0;
+    const runs: TickResponse[] = [
+        {
+            updatedChargePointList: usableChargePointsData!,
+            powerDemanded: 0,
+            consumedEnergyInTick: 0,
+            time: 0,
+        },
+    ];
+
+    const numberOfRuns = (secondsInHour * 24) / tickLength + 1;
+
+    for (let i = 1; i <= numberOfRuns; i++) {
+        if (runs[i - 1]) {
+            runs.push(
+                runTick(
+                    runs[i - 1]!.updatedChargePointList,
+                    timeStart,
+                    tickLength,
+                ),
+            );
+            timeStart += tickLength;
+        }
+    }
+
+    return runs;
+}
+
+export function getDayMaxPower(data: TickResponse[]) {
+    return data.reduce((t1, t2) =>
+        t1.powerDemanded > t2.powerDemanded ? t1 : t2,
+    );
 }
