@@ -47,12 +47,13 @@ const chargeNeededProbabilities: chargingDistanceProbabilities[] = [
 const secondsInHour = 3600;
 
 // Standard EV, 18kWh per 100km, 0.18kWh/km
-const kwhPerKm = 0.18;
+// const kwhPerKm = 0.18;
 
 export function runTick(
     chargePoints: chargePoint[],
     time: number,
     tickInterval: number,
+    carConsumptionPerKm: number,
 ) {
     let consumedEnergyInTick = 0;
     let powerDemanded = 0;
@@ -87,6 +88,7 @@ export function runTick(
                         getTimeRequiredForFullCharge(
                             distanceNeeded,
                             chargeSpeed,
+                            carConsumptionPerKm,
                         ),
                     );
                     consumedEnergyInTick +=
@@ -142,8 +144,9 @@ function getChargeDistanceProbabilityForCar() {
 function getTimeRequiredForFullCharge(
     distanceNeeded: number,
     chargeSpeed: number,
+    carConsumptionPerKm: number,
 ) {
-    const timePerKm = kwhPerKm / chargeSpeed;
+    const timePerKm = carConsumptionPerKm / chargeSpeed;
     const timePerKmInSeconds = timePerKm * secondsInHour;
 
     return distanceNeeded * timePerKmInSeconds;
@@ -158,9 +161,15 @@ function getEndChargingTime(startTime: number, timeNeeded: number) {
     return startTime + timeNeeded;
 }
 
-export function dayRun(tickLength: number, chargePoints: chargePoint[]) {
+export function dayRun(
+    tickLength: number,
+    chargePoints: chargePoint[],
+    carConsumption: number,
+) {
     let usableChargePointsData = chargePoints;
-    let timeStart = 0;
+    let timeStart = tickLength;
+    let carConsumptionPerKm = carConsumption / 100;
+
     const runs: TickResponse[] = [
         {
             updatedChargePointList: usableChargePointsData!,
@@ -170,7 +179,7 @@ export function dayRun(tickLength: number, chargePoints: chargePoint[]) {
         },
     ];
 
-    const numberOfRuns = (secondsInHour * 24) / tickLength + 1;
+    const numberOfRuns = (secondsInHour * 24) / tickLength;
 
     for (let i = 1; i <= numberOfRuns; i++) {
         if (runs[i - 1]) {
@@ -179,6 +188,7 @@ export function dayRun(tickLength: number, chargePoints: chargePoint[]) {
                     runs[i - 1]!.updatedChargePointList,
                     timeStart,
                     tickLength,
+                    carConsumptionPerKm,
                 ),
             );
             timeStart += tickLength;
@@ -192,4 +202,60 @@ export function getDayMaxPower(data: TickResponse[]) {
     return data.reduce((t1, t2) =>
         t1.powerDemanded > t2.powerDemanded ? t1 : t2,
     );
+}
+
+export function getTheoreticalTotalConsumedEnergy(
+    chargePoints: chargePoint[],
+    simulationDays: number,
+) {
+    const chargePointsConsumption = chargePoints.reduce((val, cp) => {
+        return val + cp.chargeSpeed;
+    }, 0);
+
+    return chargePointsConsumption * simulationDays * 24;
+}
+
+export function runSimulation(
+    chargePoints: chargePoint[],
+    simulationDays: number,
+    tickLength: number,
+    carConsumption: number,
+) {
+    const firstDayRun = dayRun(tickLength, chargePoints, carConsumption);
+
+    const totalRuns = [firstDayRun];
+
+    if (simulationDays > 1) {
+        for (let i = 1; i < simulationDays; i++) {
+            const lastDayRun = totalRuns[i - 1];
+            if (lastDayRun) {
+                const lastRunChargepointsData = lastDayRun.at(-1);
+                if (
+                    lastRunChargepointsData &&
+                    lastRunChargepointsData.updatedChargePointList
+                ) {
+                    totalRuns.push(
+                        dayRun(
+                            tickLength,
+                            lastRunChargepointsData.updatedChargePointList,
+                            carConsumption,
+                        ),
+                    );
+                }
+            }
+        }
+    }
+
+    const dayWithMaxPower = totalRuns.reduce((day1, day2) => {
+        return getDayMaxPower(day1) > getDayMaxPower(day2) ? day1 : day2;
+    });
+    const theoreticalMaxPower = getDayMaxPower(dayWithMaxPower).powerDemanded;
+
+    const totalConsumedEnergy = totalRuns
+        .map((v) =>
+            v.map((t) => t.consumedEnergyInTick).reduce((t1, t2) => t1 + t2),
+        )
+        .reduce((d1, d2) => d1 + d2);
+
+    return { theoreticalMaxPower, totalConsumedEnergy, totalRuns };
 }
