@@ -1,41 +1,56 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { TickVisualizator } from './TickVisualizator';
-import { chargePoint } from 'reonic';
-import { useSimulation } from '../hooks/useSimulation';
+import { chargePoint, TickResponse } from 'reonic';
+import {
+    getTheoreticalTotalConsumedEnergy,
+    runSimulation,
+} from '../helpers/calculations';
 
 export type SimulationResultProps = {
     tickLength?: number;
     simulationDays?: number;
-    numberOfChargers?: number;
-    chargerSpeed?: number;
+    chargePoints: chargePoint[];
+    carConsumption: number;
 };
 
 export function SimulationResult(props: SimulationResultProps) {
     const {
         tickLength = 600,
         simulationDays = 365,
-        numberOfChargers = 20,
-        chargerSpeed = 11,
+        chargePoints = [],
+        carConsumption,
     } = props;
-    const [selectedDay, setSelectedDay] = useState(1);
+    const [selectedDay, setSelectedDay] = useState(0);
 
-    const chargeSpeedCP = 11;
+    const [theoreticalMaxPower, setTheoreticalMaxPower] = useState(0);
+    const [totalConsumedEnergy, setTotalConsumedEnergy] = useState(0);
+    const [totalRuns, setTotalRuns] = useState<TickResponse[][]>();
 
-    const chargePoints: chargePoint[] = new Array(20).fill({
-        chargeSpeed: chargeSpeedCP,
-    });
+    useEffect(() => {
+        const { theoreticalMaxPower, totalConsumedEnergy, totalRuns } =
+            runSimulation(
+                chargePoints,
+                simulationDays,
+                tickLength,
+                carConsumption,
+            );
 
-    const { theoreticalMaxPower, totalConsumedEnergy, yearRuns } =
-        useSimulation(chargePoints, simulationDays, tickLength);
+        setTheoreticalMaxPower(theoreticalMaxPower);
+        setTotalConsumedEnergy(totalConsumedEnergy);
+        setTotalRuns(totalRuns);
+    }, [chargePoints, simulationDays, tickLength, carConsumption]);
 
     const totalConsumedEnergyInHours = totalConsumedEnergy;
-    const theoreticalTotalConsumedEnergy =
-        chargerSpeed * numberOfChargers * simulationDays * 24;
+
+    const theoreticalTotalConsumedEnergy = getTheoreticalTotalConsumedEnergy(
+        chargePoints,
+        simulationDays,
+    );
 
     return (
-        <div className={`px-2`}>
+        <div className={`px-2 flex flex-col gap-1`}>
             <h1 className="text-3xl font-bold tracking-tight">
                 Max Power used: {theoreticalMaxPower} kW
             </h1>
@@ -55,9 +70,24 @@ export function SimulationResult(props: SimulationResultProps) {
                 ).toFixed(0)}{' '}
                 %
             </h1>
+            <div>
+                Select a day to display:
+                <select
+                    value={selectedDay}
+                    onChange={(e) => {
+                        setSelectedDay(parseInt(e.target.value));
+                    }}
+                >
+                    {[...Array(simulationDays)].map((e, i) => (
+                        <option key={i} value={i}>
+                            {i + 1}
+                        </option>
+                    ))}
+                </select>
+            </div>
             <div className={`gap-1`}>
-                {yearRuns[selectedDay]
-                    ? yearRuns[selectedDay].map((r, index) => (
+                {totalRuns?.length && totalRuns[selectedDay]
+                    ? totalRuns[selectedDay].map((r, index) => (
                           <TickVisualizator
                               data={r}
                               key={selectedDay + index}
@@ -68,3 +98,9 @@ export function SimulationResult(props: SimulationResultProps) {
         </div>
     );
 }
+
+export const getConfig = async () => {
+    return {
+        render: 'static',
+    };
+};
