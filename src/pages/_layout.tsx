@@ -11,12 +11,10 @@ export default function RootLayout({ children }: RootLayoutProps) {
     return (
         <html>
             <body>
-                <div className="font-['Nunito']">
-                    <Header />
-                    <main className="m-6 flex items-center *:min-h-64 *:min-w-64 lg:m-0 lg:min-h-svh lg:justify-center">
+                <div className="">
+                    <main className="m-6 flex items-center *:min-h-100 h-100 lg:my-10 lg:mx-auto lg:justify-center flex-1 lg:max-w-[1000px] font-['Nunito']">
                         {children}
                     </main>
-                    <Footer />
                 </div>
             </body>
         </html>
